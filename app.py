@@ -3,6 +3,9 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 from datetime import datetime
+from contact import Contact
+from invoice import Invoice
+import re
 
 app = Flask(__name__)
 
@@ -121,3 +124,60 @@ if __name__ == '__main__':
         PORT = 5555
     app.run(HOST, PORT, debug=True)  # Enable debug mode for easier development
     print(f"This is running on port {PORT}")
+
+
+def process_biblio(text):
+    email_match = re.search(r"\*Customer Email: \*.*<(.+?)>", text)
+    phone_match = re.search(r"\*Customer Phone: \*([0-9 ]+)", text)
+
+    EmailAddress = email_match.group(1) if email_match else None
+    Phone = phone_match.group(1) if phone_match else None
+
+    lines = text.strip().split('\n')
+    ship_to_index = lines.index("*Ship to:*") + 1
+    Name = lines[ship_to_index].strip()
+    AddressLine1 = lines[ship_to_index + 1].strip()
+    City_PostalCode = lines[ship_to_index + 2].strip()
+
+    City, PostalCode = re.match(r"(.*) (\d+)", City_PostalCode).groups()
+
+    sub_total_match = re.search(r"Subtotal: NZ\$(\d+\.\d+)", text)
+    total_match = re.search(r"Total: NZ\$(\d+\.\d+)", text)
+
+    sub_total = sub_total_match.group(1) if sub_total_match else None
+    total = total_match.group(1) if total_match else None
+
+    print(f"Email Address: {EmailAddress}")
+    print(f"Phone: {Phone}")
+    print(f"Name: {Name}")
+    print(f"AddressLine1: {AddressLine1}")
+    print(f"City: {City}")
+    print(f"PostalCode: {PostalCode}")
+    print(f"Subtotal: {sub_total}")
+    print(f"Total: {total}")
+
+    contact = Contact(ContactID=-1, Name=Name, EmailAddress=EmailAddress, Phone=Phone)
+    contact.add_address(AddressType="POBOX", AddressLine1=AddressLine1, City=City, PostalCode=PostalCode)
+    print(contact)
+    # call Xero api, send contact and get the contact_id
+
+    invoice = Invoice(contact=contact, sub_total=sub_total, total=total, currency_code="NZD", invoice_id="123", invoice_number="INV123")
+    print(invoice)
+
+def find_keyword_in_txt(file_path, keyword):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+            if keyword in content:
+                print("this is a mail from " + keyword)
+                process_biblio(content)
+            else:
+                return "it is from fishpond"
+
+    except FileNotFoundError:
+        return "file not found"
+
+if __name__ == "__main__":
+    file_path = 'messages.txt'
+    keyword = 'Biblio.co.nz'
+    result = find_keyword_in_txt(file_path, keyword)
