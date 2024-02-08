@@ -9,7 +9,7 @@ import re
 import webbrowser
 import base64
 import sendgrid
-
+from sendgrid.helpers.mail import Mail, Email, To, Content
 
 app = Flask(__name__)
 
@@ -169,6 +169,22 @@ if __name__ == "__main__":
     keyword = 'Biblio.co.nz'
     result = find_keyword_in_txt(file_path, keyword)
 
+def send_email():
+    sg = sendgrid.SendGridAPIClient(api_key=os.environ.get('SENDGRID_API_KEY'))
+    from_email = Email("richard")  # Change to your verified sender
+    to_email = To("test@example.com")  # Change to your recipient
+    subject = "Sending with SendGrid is Fun"
+    content = Content("text/plain", "and easy to do anywhere, even with Python")
+    mail = Mail(from_email, to_email, subject, content)
+
+    # Get a JSON-ready representation of the Mail object
+    mail_json = mail.get()
+
+    # Send an HTTP POST request to /mail/send
+    response = sg.client.mail.send.post(request_body=mail_json)
+    print(response.status_code)
+    print(response.headers)
+
 
 @app.route('/auth_xero')
 def auth_xero():
@@ -193,7 +209,7 @@ def callback():
     data = {
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": REDIRECT_URI
+        "redirect_uri": "https://bx.richardbaldwin.nz/callback"
     }
 
     # Original code used requests.post, but I'm using the request library from Flask instead
