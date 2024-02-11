@@ -7,6 +7,7 @@ from contact import Contact
 from invoice import Invoice
 import re
 import webbrowser
+import csv
 import base64
 import sendgrid
 from sendgrid.helpers.mail import Mail, Email, To, Content
@@ -169,10 +170,13 @@ if __name__ == "__main__":
     keyword = 'Biblio.co.nz'
     result = find_keyword_in_txt(file_path, keyword)
 
+
+#Working Test Email Code
+@app.route('/send_test_email')
 def send_email():
     sg = sendgrid.SendGridAPIClient(api_key=os.environ.get('SENDGRID_API_KEY'))
-    from_email = Email("richard")  # Change to your verified sender
-    to_email = To("test@example.com")  # Change to your recipient
+    from_email = Email("richard@monument.page")  # Change to your verified sender
+    to_email = To("richard@empyre.co")  # Change to your recipient
     subject = "Sending with SendGrid is Fun"
     content = Content("text/plain", "and easy to do anywhere, even with Python")
     mail = Mail(from_email, to_email, subject, content)
@@ -186,6 +190,16 @@ def send_email():
     print(response.headers)
 
 
+def collect_data():
+    data = request.form.to_dict()
+    with open('daily_data.csv', 'a', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=data.keys())
+        writer.writerow(data)
+    return 'Data received'
+
+
+
+# Xero Code
 @app.route('/auth_xero')
 def auth_xero():
     # Redirect the user to the Xero authorization URL (same as before)
