@@ -14,8 +14,7 @@ from sendgrid.helpers.mail import Mail, Email, To, Content
 
 app = Flask(__name__)
 
-# Define the Xero API credentials
-
+# Define your Xero API credentials and redirect URI
 CLIENT_ID = '34BEA5134E024579ABDD240E66C566F5'
 CLIENT_SECRET = 'RbylkCIYynciLTeDEMYHij0m7tIO8Mcjmdn3Q-eQ7I1BNpYq'
 REDIRECT_URI = "https://bx.richardbaldwin.nz/callback"
@@ -152,6 +151,7 @@ def process_biblio(text):
     invoice = Invoice(contact=contact, sub_total=sub_total, total=total, currency_code="NZD", invoice_id="123", invoice_number="INV123")
     print(invoice)
 
+
 def find_keyword_in_txt(file_path, keyword):
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
@@ -165,14 +165,23 @@ def find_keyword_in_txt(file_path, keyword):
     except FileNotFoundError:
         return "file not found"
 
+
 if __name__ == "__main__":
     file_path = 'messages.txt'
     keyword = 'Biblio.co.nz'
     result = find_keyword_in_txt(file_path, keyword)
 
+# Add data to a CSV file
+def collect_data():
+    data = request.form.to_dict()
+    with open('daily_data.csv', 'a', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=data.keys())
+        writer.writerow(data)
+    return 'Data received'
 
-#Working Test Email Code
-@app.route('/send_test_email')
+
+# Working Test Email Code
+# @app.route('/send_test_email')
 def send_email():
     sg = sendgrid.SendGridAPIClient(api_key=os.environ.get('SENDGRID_API_KEY'))
     from_email = Email("richard@monument.page")  # Change to your verified sender
@@ -186,34 +195,120 @@ def send_email():
 
     # Send an HTTP POST request to /mail/send
     response = sg.client.mail.send.post(request_body=mail_json)
-    print(response.status_code)
-    print(response.headers)
+
+    # This is the response from the SendGrid API, but it's not strictly required
+    #print(response.status_code)
+    #print(response.headers)
 
 
-def collect_data():
-    data = request.form.to_dict()
-    with open('daily_data.csv', 'a', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=data.keys())
-        writer.writerow(data)
-    return 'Data received'
 
 
 
 # Xero Code
-@app.route('/auth_xero')
-def auth_xero():
+# Define the path to the file where tokens will be stored
+TOKEN_FILE_PATH = 'xero_tokens2.txt'
+
+def save_tokens(access_token, refresh_token, tenant_id):
+    # Implement logic to save tokens securely (e.g., in a database or encrypted file)
+    with open(TOKEN_FILE_PATH, 'w') as f:
+        f.write(f"access_token={access_token}\n")
+        f.write(f"refresh_token={refresh_token}\n")
+        f.write(f"tenant_id={tenant_id}\n")
+
+def get_refresh_token():
+    if os.path.exists(TOKEN_FILE_PATH):
+        with open(TOKEN_FILE_PATH, 'r') as f:
+            tokens = f.readlines()
+            for token in tokens:
+                if token.startswith("refresh_token="):
+                    refresh_token = token.split("=")[1].strip()
+                    return refresh_token
+    return None
+
+def get_tenant_id():
+    if os.path.exists(TOKEN_FILE_PATH):
+        with open(TOKEN_FILE_PATH, 'r') as f:
+            tokens = f.readlines()
+            for token in tokens:
+                if token.startswith("tenant_id="):
+                    tenant_id = token.split("=")[1].strip()
+                    return tenant_id
+    return None
+
+def refresh_access_token():
+    token_url = "https://identity.xero.com/connect/token"
+    headers = {
+        "Authorization": "Basic " + base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode(),
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": get_access_token()
+    }
+    response = request.post(token_url, headers=headers, data=data)
+    if response.status_code == 200:
+        new_access_token = response.json().get("access_token")
+        new_refresh_token = response.json().get("refresh_token")
+        tenant_id = get_tenant_id()  # Retrieve tenant ID from storage
+        # Save tokens and tenantID for future use
+        save_tokens(new_access_token, new_refresh_token, tenant_id)
+        return new_access_token
+    else:
+        # Handle the case where token refreshing fails
+        print("Token refreshing failed")
+        return "Token refreshing failed"
+    
+def get_access_token():
+    if os.path.exists(TOKEN_FILE_PATH):
+        with open(TOKEN_FILE_PATH, 'r') as f:
+            tokens = f.readlines()
+            access_token = None
+            for token in tokens:
+                if token.startswith("access_token="):
+                    access_token = token.split("=")[1].strip()
+                    break
+            return access_token
+    return None
+
+#Implement the create_invoice function to create an invoice in Xero
+def create_invoice(xero_invoice, access_token, tenant_id):
+    create_invoice_url = "https://api.xero.com/api.xro/2.0/Invoices"
+    headers = {
+        "Authorization": "Bearer " + access_token,
+        "Content-Type": "application/json",
+        "xero-tenant-id": tenant_id
+    }
+    response = request.post(create_invoice_url, headers=headers, json=xero_invoice)
+    if response.status_code == 200:
+        return "Invoice created successfully"
+    else:
+        error_message = f"Failed to create invoice: {response.text}"
+        print(error_message)
+        return error_message
+
+# Define the home route    
+@app.route('/')
+def home():
+    return "Welcome to the Invoice Creation App!!"
+
+# Define the login route to start the OAuth 2.0 flow
+@app.route('/login')
+def login():
     # Redirect the user to the Xero authorization URL (same as before)
     xero_authorization_url = (
-        "https://login.xero.com/identity/connect/authorize?response_type=code&client_id=" + CLIENT_ID + "&redirect_uri=" + REDIRECT_URI + "&scope=openid profile email accounting.transactions&state=123"
+        "https://login.xero.com/identity/connect/authorize?"
+        f"response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
+        "&scope=openid profile email accounting.transactions&state=123"
     )
-
     return redirect(xero_authorization_url)
 
+# Define the callback route to handle the authorization code automatically
 @app.route('/callback')
 def callback():
     # Get the authorization code from the query parameters
     code = request.args.get('code')
-
+    tenant_id = request.args.get('tenantId')
+    
     # Make a POST request to exchange the authorization code for an access token
     token_url = "https://identity.xero.com/connect/token"
     headers = {
@@ -223,16 +318,52 @@ def callback():
     data = {
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": "https://bx.richardbaldwin.nz/callback"
+        "redirect_uri": REDIRECT_URI
     }
-
-    # Original code used requests.post, but I'm using the request library from Flask instead
     response = request.post(token_url, headers=headers, data=data)
 
-    # Handle the response (you may want to store the access token securely)
+    # Handle the response
     if response.status_code == 200:
         access_token = response.json().get("access_token")
-        # You can store the access token for future use or perform other actions.
-        return f"Access Token: {access_token}"
+        refresh_token = response.json().get("refresh_token")
+        save_tokens(access_token, refresh_token, tenant_id)
+        return "Authorization successful. You can now create invoices."
     else:
         return "Failed to exchange the authorization code for an access token."
+
+# Define the create_invoice route to create an invoice in Xero once authorized
+@app.route('/create_invoice')
+def create_invoice_route():
+    # Check if access token is expired or about to expire
+    access_token = get_access_token()
+    if access_token is None:
+        access_token = refresh_access_token()
+    if access_token:
+        # Proceed with invoice creation using the refreshed access token
+        tenant_id = get_tenant_id()
+
+        # Replace this example invoice data with your actual data
+        xero_invoice = {
+            "Type": "ACCREC",
+            "Contact": {
+                "Name": "Customer Name",
+                "Addresses": [{
+                    "AddressType": "STREET",
+                    "AddressLine1": "123 Main Street",
+                    "PostalCode": "12345"
+                }]
+            },
+            "Date": "2023-01-01",
+            "DueDate": "2023-01-15",
+            "LineItems": [{
+                "Description": "Example Item",
+                "Quantity": 1,
+                "UnitAmount": 100.00,
+                "AccountCode": "200"
+            }], 
+            "Reference": "INV-001"
+        }
+        result = create_invoice(xero_invoice, access_token, tenant_id)
+        return result
+    else:
+        return "Failed to create invoice. Unable to obtain access token."
