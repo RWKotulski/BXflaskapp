@@ -11,12 +11,15 @@ import csv
 import base64
 import sendgrid
 from sendgrid.helpers.mail import Mail, Email, To, Content
+from flask import Flask
+import requests
+import base64
 
 app = Flask(__name__)
 
 # Define your Xero API credentials and redirect URI
-CLIENT_ID = '34BEA5134E024579ABDD240E66C566F5'
-CLIENT_SECRET = 'RbylkCIYynciLTeDEMYHij0m7tIO8Mcjmdn3Q-eQ7I1BNpYq'
+CLIENT_ID = os.environ.get('CLIENT_ID')
+CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
 REDIRECT_URI = "https://bx.richardbaldwin.nz/callback"
 
 app.logger.setLevel(logging.INFO)
@@ -201,19 +204,31 @@ def send_email():
     #print(response.headers)
 
 
-
+#================================================================================================
+#================================================================================================
 
 
 # Xero Code
 # Define the path to the file where tokens will be stored
 TOKEN_FILE_PATH = 'xero_tokens2.txt'
+RECORDS_FILE_PATH = 'records.txt'
+
 
 def save_tokens(access_token, refresh_token, tenant_id):
     # Implement logic to save tokens securely (e.g., in a database or encrypted file)
+    print("tenantID: ", tenant_id)
     with open(TOKEN_FILE_PATH, 'w') as f:
         f.write(f"access_token={access_token}\n")
         f.write(f"refresh_token={refresh_token}\n")
         f.write(f"tenant_id={tenant_id}\n")
+
+
+def record_data(data):
+    # Implement logic to save tokens securely (e.g., in a database or encrypted file)
+    #print("tenantID: ", tenant_id)
+    with open(RECORDS_FILE_PATH, 'w') as f:
+        f.write(f"data={data}\n")
+        
 
 def get_refresh_token():
     if os.path.exists(TOKEN_FILE_PATH):
@@ -245,10 +260,11 @@ def refresh_access_token():
         "grant_type": "refresh_token",
         "refresh_token": get_access_token()
     }
-    response = request.post(token_url, headers=headers, data=data)
+    response = requests.post(token_url, headers=headers, data=data)
     if response.status_code == 200:
         new_access_token = response.json().get("access_token")
         new_refresh_token = response.json().get("refresh_token")
+        print(new_refresh_token)
         tenant_id = get_tenant_id()  # Retrieve tenant ID from storage
         # Save tokens and tenantID for future use
         save_tokens(new_access_token, new_refresh_token, tenant_id)
@@ -269,7 +285,7 @@ def get_access_token():
                     break
             return access_token
     return None
-
+#No tenant ID saved 
 #Implement the create_invoice function to create an invoice in Xero
 def create_invoice(xero_invoice, access_token, tenant_id):
     create_invoice_url = "https://api.xero.com/api.xro/2.0/Invoices"
@@ -278,7 +294,7 @@ def create_invoice(xero_invoice, access_token, tenant_id):
         "Content-Type": "application/json",
         "xero-tenant-id": tenant_id
     }
-    response = request.post(create_invoice_url, headers=headers, json=xero_invoice)
+    response = requests.post(create_invoice_url, headers=headers, json=xero_invoice)
     if response.status_code == 200:
         return "Invoice created successfully"
     else:
@@ -289,6 +305,7 @@ def create_invoice(xero_invoice, access_token, tenant_id):
 # Define the home route    
 @app.route('/')
 def home():
+    print("request args: ", request.args)
     return "Welcome to the Invoice Creation App!!"
 
 # Define the login route to start the OAuth 2.0 flow
@@ -300,6 +317,7 @@ def login():
         f"response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
         "&scope=openid profile email accounting.transactions&state=123"
     )
+    print("xero_authorization_url: ", xero_authorization_url)
     return redirect(xero_authorization_url)
 
 # Define the callback route to handle the authorization code automatically
@@ -307,8 +325,7 @@ def login():
 def callback():
     # Get the authorization code from the query parameters
     code = request.args.get('code')
-    tenant_id = request.args.get('tenantId')
-    
+    print("request args: ", request.args)
     # Make a POST request to exchange the authorization code for an access token
     token_url = "https://identity.xero.com/connect/token"
     headers = {
@@ -320,16 +337,37 @@ def callback():
         "code": code,
         "redirect_uri": REDIRECT_URI
     }
-    response = request.post(token_url, headers=headers, data=data)
-
+    response = requests.post(token_url, headers=headers, data=data)
+    print("response: ", response.json())
     # Handle the response
     if response.status_code == 200:
         access_token = response.json().get("access_token")
         refresh_token = response.json().get("refresh_token")
+        tenant_id = check_tenants(access_token)
         save_tokens(access_token, refresh_token, tenant_id)
+        
         return "Authorization successful. You can now create invoices."
     else:
         return "Failed to exchange the authorization code for an access token."
+
+
+def check_tenants(access_t):
+    t_response = requests.get("https://api.xero.com/connections", headers={"Authorization": "Bearer " + access_t, "Content-Type": "application/json"})
+    print("tenants: ", t_response.json())
+    #GET https://api.xero.com/connections
+#Authorization: "Bearer " + access_token
+#Content-Type: application/json
+    
+    response_data = t_response.json()
+    record_data(response_data)
+
+# Iterate over the list to find the dictionary with 'tenantName' as 'Book Express Ltd'
+    for item in response_data:
+        if item['tenantName'] == 'Book Express Ltd':
+            tenant_id_demo = item['tenantId']
+            print("Demo ID: ", tenant_id_demo)
+            return tenant_id_demo
+    return None
 
 # Define the create_invoice route to create an invoice in Xero once authorized
 @app.route('/create_invoice')
