@@ -258,7 +258,7 @@ def refresh_access_token():
     }
     data = {
         "grant_type": "refresh_token",
-        "refresh_token": get_access_token()
+        "refresh_token": get_refresh_token()
     }
     response = requests.post(token_url, headers=headers, data=data)
     if response.status_code == 200:
@@ -315,7 +315,7 @@ def login():
     xero_authorization_url = (
         "https://login.xero.com/identity/connect/authorize?"
         f"response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
-        "&scope=openid profile email accounting.transactions&state=123"
+        "&scope=openid offline_access profile email accounting.transactions&state=123"
     )
     print("xero_authorization_url: ", xero_authorization_url)
     return redirect(xero_authorization_url)
@@ -348,7 +348,7 @@ def callback():
         
         return "Authorization successful. You can now create invoices."
     else:
-        return "Failed to exchange the authorization code for an access token."
+        return "Failed to exchange the authorization code for an access token. Response Error: " + response.text
 
 
 def check_tenants(access_t):
