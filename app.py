@@ -56,14 +56,12 @@ def index():
 def sendgrid_parser():
     file_path = 'messages.txt'
     if request.method == 'POST':
-        # Uncomment this block if expecting JSON data
-        # if request.is_json:
-        #     data = request.get_json()
-        #     # Process JSON data here
+
+        # Check if the email subject has appeared previously
+        
 
         try:
-            # encode HTML entities to prevent XSS attacks
-            # message_body_text = html.escape(request.form['text'])
+            # Extract the message subject and text
             message_subject = request.form['subject']
             message_text = request.form['text']
 
