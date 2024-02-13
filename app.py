@@ -17,6 +17,12 @@ import base64
 
 app = Flask(__name__)
 
+if __name__ == "__main__":
+    file_path = 'messages.txt'
+    keyword = 'Biblio.co.nz'
+    
+
+
 # Define your Xero API credentials and redirect URI
 CLIENT_ID = os.environ.get('CLIENT_ID')
 CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
@@ -75,104 +81,16 @@ def sendgrid_parser():
                 for key, value in request.form.items():
                     file.write(f"{key}: {value}\n")
 
-            return "Message appended to file", 200
+            # Call the function to process the file
+            result = finding_source(file_path)
+
+            return "Invoice Created", 200
         except Exception as e:
             # Handle exceptions
             return f"An error occurred: {e}", 500
         
 
 
-
-
-@app.route('/post-endpoint', methods=['GET', 'POST'])
-def handle_post():
-    #app.logger.info(f'Info level log')
-    """
-    Handles POST requests and extracts JSON data from the request.
-    """
-    if request.is_json:
-        json_data = request.get_json()
-
-        # print the json_data to the error log
-        #app.logger.info(f"Printing data:")
-        #app.logger.info(json_data)
-
-
-        # Print the json_data to the console
-        print(f"Received data: {json_data}")
-        return "Data received and printed to console", 200
-    else:
-        print(f"Failed")
-        return "Request body must be JSON", 400
-
-if __name__ == '__main__':
-    import os
-    HOST = os.environ.get('SERVER_HOST', 'localhost')
-    try:
-        PORT = int(os.environ.get('SERVER_PORT', '5555'))
-    except ValueError:
-        PORT = 5555
-    app.run(HOST, PORT, debug=True)  # Enable debug mode for easier development
-    print(f"This is running on port {PORT}")
-
-
-def process_biblio(text):
-    email_match = re.search(r"\*Customer Email: \*.*<(.+?)>", text)
-    phone_match = re.search(r"\*Customer Phone: \*([0-9 ]+)", text)
-
-    EmailAddress = email_match.group(1) if email_match else None
-    Phone = phone_match.group(1) if phone_match else None
-
-    lines = text.strip().split('\n')
-    ship_to_index = lines.index("*Ship to:*") + 1
-    Name = lines[ship_to_index].strip()
-    AddressLine1 = lines[ship_to_index + 1].strip()
-    City_PostalCode = lines[ship_to_index + 2].strip()
-
-    City, PostalCode = re.match(r"(.*) (\d+)", City_PostalCode).groups()
-
-    sub_total_match = re.search(r"Subtotal: NZ\$(\d+\.\d+)", text)
-    total_match = re.search(r"Total: NZ\$(\d+\.\d+)", text)
-
-    sub_total = sub_total_match.group(1) if sub_total_match else None
-    total = total_match.group(1) if total_match else None
-
-    print(f"Email Address: {EmailAddress}")
-    print(f"Phone: {Phone}")
-    print(f"Name: {Name}")
-    print(f"AddressLine1: {AddressLine1}")
-    print(f"City: {City}")
-    print(f"PostalCode: {PostalCode}")
-    print(f"Subtotal: {sub_total}")
-    print(f"Total: {total}")
-
-    contact = Contact(ContactID=-1, Name=Name, EmailAddress=EmailAddress, Phone=Phone)
-    contact.add_address(AddressType="POBOX", AddressLine1=AddressLine1, City=City, PostalCode=PostalCode)
-    print(contact)
-    # call Xero api, send contact and get the contact_id
-
-    invoice = Invoice(contact=contact, sub_total=sub_total, total=total, currency_code="NZD", invoice_id="123", invoice_number="INV123")
-    print(invoice)
-
-
-def find_keyword_in_txt(file_path, keyword):
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            content = file.read()
-            if keyword in content:
-                print("this is a mail from " + keyword)
-                process_biblio(content)
-            else:
-                return "it is from fishpond"
-
-    except FileNotFoundError:
-        return "file not found"
-
-
-if __name__ == "__main__":
-    file_path = 'messages.txt'
-    keyword = 'Biblio.co.nz'
-    result = find_keyword_in_txt(file_path, keyword)
 
 # Add data to a CSV file
 def collect_data():
@@ -370,7 +288,7 @@ def check_tenants(access_t):
     return None
 
 # Define the create_invoice route to create an invoice in Xero once authorized
-@app.route('/create_invoice')
+#@app.route('/create_invoice')
 def create_invoice_route():
     # Check if access token is expired or about to expire
     access_token = get_access_token()
@@ -405,3 +323,245 @@ def create_invoice_route():
         return result
     else:
         return "Failed to create invoice. Unable to obtain access token."
+
+
+
+# Process Emails
+def process_fishpond(text):
+    name_pattern = r"Send to:\s*\n\n(\w+ \w+)"
+    email_pattern = r"(\w+@\w+\.\w+)"
+    phone_pattern = r"(\+\d{2} \d{2} \d{6})"
+    address_patterns = {
+        'AddressLine1': r"Send to:\s*[\s\S]*?\n\n.*\n(.*?)\n",
+        'AddressLine2': r"Send to:\s*[\s\S]*?\n\n.*\n.*\n(.*?)\n",
+        'AddressLine3': r"Send to:\s*[\s\S]*?\n\n.*\n.*\n.*\n(.*?)\n",
+        'City': r"Send to:\s*[\s\S]*?\n\n.*\n.*\n.*\n.*\n(\D+),",
+        'PostalCode': r"Send to:\s*[\s\S]*?\n\n.*\n.*\n.*\n.*\n.*,\s*(\d+)"
+    }
+
+    total_pattern = r"=\s*\$(\d+\.\d{2})"
+
+    extracted_address = {}
+    for key, pattern in address_patterns.items():
+        match = re.search(pattern, text)
+        if match:
+            extracted_address[key] = match.group(1).strip()
+
+    name_match = re.search(name_pattern, text)
+    email_match = re.search(email_pattern, text)
+    phone_match = re.search(phone_pattern, text)
+    total_match = re.search(total_pattern, text)
+    Name = name_match.group(1)
+    EmailAddress = email_match.group(1)
+    Phone = phone_match.group(1)
+    Total = total_match.group(1)
+
+    access_token = get_access_token()
+    if access_token is None:
+        access_token = refresh_access_token()
+    if access_token:
+        # Proceed with invoice creation using the refreshed access token
+        tenant_id = get_tenant_id()
+
+        #contact = Contact(ContactID=-1, Name=name, EmailAddress=email_address, Phone=phone)
+        #contact.add_address(AddressType="STREET", AddressLine1=address_line1,AddressLine2 = address_line2,AddressLine3='', City=city, PostalCode=postal_code)
+
+        # Replace this example invoice data with your actual data
+        xero_invoice = {
+            "Type": "ACCREC",
+            "Contact": {
+                "Name": Name,
+                "Addresses": [{
+                    "AddressType": "STREET",
+                    "AddressLine1": address_line1,
+                    "AddressLine2": address_line2,
+                    "City": city,
+                    "PostalCode": postal_code
+                }]
+            },
+            "Date": "2023-01-01",
+            "DueDate": "2023-01-15",
+            "LineItems": [{
+                "Description": "Example Item",
+                "Quantity": 1,
+                "UnitAmount": Total,
+                "AccountCode": "220"
+            }], 
+            "Reference": "Chrisland Sale"
+        }
+        result = create_invoice(xero_invoice, access_token, tenant_id)
+
+    # erase the contents of the messages.txt file
+    open('messages.txt', 'w').close()
+
+
+
+    #contact = Contact(ContactID=-1, Name=Name, EmailAddress=EmailAddress, Phone=Phone)
+    #contact.add_address(AddressType="STREET", AddressLine1=extracted_address.get('AddressLine1'),AddressLine2 = extracted_address.get('AddressLine2'),AddressLine3 = extracted_address.get('AddressLine3'), City=extracted_address.get('City'), PostalCode=extracted_address.get('PostalCode'))
+    #print(contact)
+    #invoice = Invoice(contact=contact, sub_total='', total=Total, currency_code="NZD", invoice_id="123", invoice_number="INV123")
+    #print(invoice)
+
+def process_christland(text):
+    print(" ")
+    name_pattern = r"Shipping Info\n\n(.+)"
+    address_line1_pattern = r"Shipping Info\n\n.+\n\n(.+)"
+    address_line2_pattern = r"Shipping Info\n\n.+\n\n.+\n\n(.+)"
+    city_pattern = r"Shipping Info\n\n.+\n\n.+\n\n.+\n\n(.+)"
+    email_pattern = r"(\S+@\S+)"
+    phone_pattern = r"Phone: (\d+)"
+    subtotal_pattern = r"Subtotal\s+NZ\$(\d+\.\d{2})"
+    total_pattern = r"Total\s+NZ\$(\d+\.\d{2})"
+
+    name = re.search(name_pattern, text).group(1)
+    address_line1 = re.search(address_line1_pattern, text).group(1)
+    address_line2 = re.search(address_line2_pattern, text).group(1)
+    cityText = re.search(city_pattern, text).group(1)
+    city, postal_code = cityText.split(" ", 1)
+    email_address = re.search(email_pattern, text).group(1)
+    phone = re.search(phone_pattern, text).group(1)
+
+    subtotal_match = re.search(subtotal_pattern, text)
+    sub_total = subtotal_match.group(1)
+    
+    total_match = re.search(total_pattern, text)
+    total = total_match.group(1)
+
+    access_token = get_access_token()
+    if access_token is None:
+        access_token = refresh_access_token()
+    if access_token:
+        # Proceed with invoice creation using the refreshed access token
+        tenant_id = get_tenant_id()
+
+        #contact = Contact(ContactID=-1, Name=name, EmailAddress=email_address, Phone=phone)
+        #contact.add_address(AddressType="STREET", AddressLine1=address_line1,AddressLine2 = address_line2,AddressLine3='', City=city, PostalCode=postal_code)
+
+        # Replace this example invoice data with your actual data
+        xero_invoice = {
+            "Type": "ACCREC",
+            "Contact": {
+                "Name": name,
+                "Addresses": [{
+                    "AddressType": "STREET",
+                    "AddressLine1": address_line1,
+                    "AddressLine2": address_line2,
+                    "City": city,
+                    "PostalCode": postal_code
+                }]
+            },
+            "Date": "2023-01-01",
+            "DueDate": "2023-01-15",
+            "LineItems": [{
+                "Description": "Example Item",
+                "Quantity": 1,
+                "UnitAmount": total,
+                "AccountCode": "220"
+            }], 
+            "Reference": "Chrisland Sale"
+        }
+        result = create_invoice(xero_invoice, access_token, tenant_id)
+        # erase the contents of the messages.txt file
+        open('messages.txt', 'w').close()
+    
+    #print(contact)
+    #invoice = Invoice(contact=contact, sub_total=sub_total, total=total, currency_code="NZD", invoice_id="123", invoice_number="INV123")
+    #print(invoice)
+   
+
+def process_biblio(text):
+    email_match = re.search(r"\*Customer Email: \*.*<(.+?)>", text)
+    phone_match = re.search(r"\*Customer Phone: \*([0-9 ]+)", text)
+
+    EmailAddress = email_match.group(1) if email_match else None
+    Phone = phone_match.group(1) if phone_match else None
+
+    lines = text.strip().split('\n')
+    ship_to_index = lines.index("*Ship to:*") + 1
+    Name = lines[ship_to_index].strip()
+    AddressLine1 = lines[ship_to_index + 1].strip()
+    City_PostalCode = lines[ship_to_index + 2].strip()
+
+    City, PostalCode = re.match(r"(.*) (\d+)", City_PostalCode).groups()
+
+    sub_total_match = re.search(r"Subtotal: NZ\$(\d+\.\d+)", text)
+    total_match = re.search(r"Total: NZ\$(\d+\.\d+)", text)
+
+    sub_total = sub_total_match.group(1) if sub_total_match else None
+    total = total_match.group(1) if total_match else None
+
+    AddressLine2 = None
+    if len(lines) > ship_to_index + 2:
+        AddressLine2 = lines[ship_to_index + 2].strip()
+        if AddressLine2 == City+" "+PostalCode :
+            AddressLine2 = ""
+
+
+    access_token = get_access_token()
+    if access_token is None:
+        access_token = refresh_access_token()
+    if access_token:
+        # Proceed with invoice creation using the refreshed access token
+        tenant_id = get_tenant_id()
+
+        # Replace this example invoice data with your actual data
+        xero_invoice = {
+            "Type": "ACCREC",
+            "Contact": {
+                "Name": Name,
+                "Addresses": [{
+                    "AddressType": "STREET",
+                    "AddressLine1": AddressLine1,
+                    "AddressLine2": AddressLine2,
+                    "City": City,
+                    "PostalCode": PostalCode
+                }]
+            },
+            "Date": "2023-01-01",
+            "DueDate": "2023-01-15",
+            "LineItems": [{
+                "Description": "Example Item",
+                "Quantity": 1,
+                "UnitAmount": total,
+                "AccountCode": "200"
+            }], 
+            "Reference": "Biblio Sale"
+        }
+        result = create_invoice(xero_invoice, access_token, tenant_id)
+        # erase the contents of the messages.txt file
+        open('messages.txt', 'w').close()
+
+        print(result)
+        return result
+
+    #contact = Contact(ContactID=-1, Name=Name, EmailAddress=EmailAddress, Phone=Phone)
+    #contact.add_address(AddressType="STREET", AddressLine1=AddressLine1, AddressLine2=AddressLine2,AddressLine3='', City=City, PostalCode=PostalCode)
+    #print(contact)  
+
+    # call Xero api, send contact and get the contact_id
+    
+    #invoice = Invoice(contact=contact, sub_total=sub_total, total=total, currency_code="NZD", invoice_id="123", invoice_number="INV123")
+    #print(invoice)
+    
+def finding_source(file_path):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+            if 'Biblio.co.nz' in content:
+                print('this is a mail from + Biblio.co.nz')
+                return process_biblio(content)
+            elif 'Fishpond.co.nz' in content:
+                print("this is a mail from fishpond")
+                return process_fishpond(content)
+            else:
+                print("this is a mail from christland")
+                return process_christland(content)
+
+    except FileNotFoundError:
+        return "file not found"
+
+
+@app.route('/testInvoiceFromFile')
+def testInvoiceFromFile():
+    file_path = 'messages.txt'
+    result = finding_source(file_path)
