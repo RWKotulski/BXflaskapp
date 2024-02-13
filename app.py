@@ -20,7 +20,7 @@ app = Flask(__name__)
 if __name__ == "__main__":
     file_path = 'messages.txt'
     keyword = 'Biblio.co.nz'
-    
+   
 
 
 # Define your Xero API credentials and redirect URI
@@ -36,7 +36,7 @@ file_handler = RotatingFileHandler('logs/app.log', maxBytes=10240, backupCount=1
 formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]')
 file_handler.setFormatter(formatter)
 app.logger.addHandler(file_handler)
-    
+   
 
 
 
@@ -51,44 +51,51 @@ def index():
     return "Hello World!"
 
 
+
+def serialize_form_data(form_data):
+    # Serialize form data in a consistent order
+    items = sorted(form_data.items())
+    serialized = ";".join(f"{key}={value}" for key, value in items)
+    return serialized
+
 # The endpoint to which SendGrid will send the parsed email
 @app.route('/append-message', methods=['POST'])
 def sendgrid_parser():
     file_path = 'messages.txt'
     if request.method == 'POST':
-
-        # Check if the email subject has appeared previously
-        
-
         try:
-            # Extract the message subject and text
-            message_subject = request.form['subject']
-            message_text = request.form['text']
+            # Serialize the current request form data
+            current_form_serialized = serialize_form_data(request.form)
+           
+            # Initialize a flag to check if the form data is new
+            form_data_is_new = True
 
-            # Open the file and append the message
-            with open(file_path, 'a') as file:
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                file.write(f"Called at: {current_time}\n")
-                file.write("this has been called" + '\n\n')
-                file.write("1" + '\n')
-                file.write("Subject:" + '\n' + message_subject + '\n')
-                file.write("Text:" + '\n' + message_text + '\n')
+            # Check if the file exists to avoid FileNotFoundError
+            if os.path.exists(file_path):
+                # Read the file and check if the serialized form data has appeared previously
+                with open(file_path, 'r') as file:
+                    file_contents = file.read()
+                    if current_form_serialized in file_contents:
+                        form_data_is_new = False
 
-                # Log specific fields from request.form
-                file.write("Form Data:" + '\n')
-                for key, value in request.form.items():
-                    file.write(f"{key}: {value}\n")
+            if form_data_is_new:
+                # Open the file and append the message
+                with open(file_path, 'a') as file:
+                    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    file.write(f"Called at: {current_time}\n")
+                    file.write("Form Data:" + '\n')
+                    file.write(current_form_serialized + '\n\n')
 
-            # Call the function to process the file
-            result = finding_source(file_path)
-
-            return "Invoice Created", 200
+                # Calls function to send file name and start the Xero API process
+                # Assume finding_source is defined elsewhere
+                result = finding_source(file_path)  # Result currently doesn't do anything
+               
+                return "Data Added", 200
+            else:
+                return "Duplicate Form Data, not added", 200
         except Exception as e:
             # Handle exceptions
             return f"An error occurred: {e}", 500
-        
-
-
 
 # Add data to a CSV file
 def collect_data():
@@ -129,22 +136,20 @@ def send_email():
 TOKEN_FILE_PATH = 'xero_tokens2.txt'
 RECORDS_FILE_PATH = 'records.txt'
 
-
+# Saves tokens to a file
 def save_tokens(access_token, refresh_token, tenant_id):
-    # Implement logic to save tokens securely (e.g., in a database or encrypted file)
     print("tenantID: ", tenant_id)
     with open(TOKEN_FILE_PATH, 'w') as f:
         f.write(f"access_token={access_token}\n")
         f.write(f"refresh_token={refresh_token}\n")
         f.write(f"tenant_id={tenant_id}\n")
 
-
+# Records Data in a file
 def record_data(data):
-    # Implement logic to save tokens securely (e.g., in a database or encrypted file)
-    #print("tenantID: ", tenant_id)
+
     with open(RECORDS_FILE_PATH, 'w') as f:
         f.write(f"data={data}\n")
-        
+       
 
 def get_refresh_token():
     if os.path.exists(TOKEN_FILE_PATH):
@@ -189,7 +194,7 @@ def refresh_access_token():
         # Handle the case where token refreshing fails
         print("Token refreshing failed")
         return "Token refreshing failed"
-    
+   
 def get_access_token():
     if os.path.exists(TOKEN_FILE_PATH):
         with open(TOKEN_FILE_PATH, 'r') as f:
@@ -201,7 +206,7 @@ def get_access_token():
                     break
             return access_token
     return None
-#No tenant ID saved 
+#No tenant ID saved
 #Implement the create_invoice function to create an invoice in Xero
 def create_invoice(xero_invoice, access_token, tenant_id):
     create_invoice_url = "https://api.xero.com/api.xro/2.0/Invoices"
@@ -261,7 +266,7 @@ def callback():
         refresh_token = response.json().get("refresh_token")
         tenant_id = check_tenants(access_token)
         save_tokens(access_token, refresh_token, tenant_id)
-        
+       
         return "Authorization successful. You can now create invoices."
     else:
         return "Failed to exchange the authorization code for an access token. Response Error: " + response.text
@@ -270,14 +275,10 @@ def callback():
 def check_tenants(access_t):
     t_response = requests.get("https://api.xero.com/connections", headers={"Authorization": "Bearer " + access_t, "Content-Type": "application/json"})
     print("tenants: ", t_response.json())
-    #GET https://api.xero.com/connections
-#Authorization: "Bearer " + access_token
-#Content-Type: application/json
-    
     response_data = t_response.json()
     record_data(response_data)
 
-# Iterate over the list to find the dictionary with 'tenantName' as 'Book Express Ltd'
+    # Iterate over the list to find the dictionary with 'tenantName' as 'Book Express Ltd'
     for item in response_data:
         if item['tenantName'] == 'Book Express Ltd':
             tenant_id_demo = item['tenantId']
@@ -314,7 +315,7 @@ def create_invoice_route():
                 "Quantity": 1,
                 "UnitAmount": 100.00,
                 "AccountCode": "200"
-            }], 
+            }],
             "Reference": "INV-001"
         }
         result = create_invoice(xero_invoice, access_token, tenant_id)
@@ -336,7 +337,6 @@ def process_fishpond(text):
         'City': r"Send to:\s*[\s\S]*?\n\n.*\n.*\n.*\n.*\n(\D+),",
         'PostalCode': r"Send to:\s*[\s\S]*?\n\n.*\n.*\n.*\n.*\n.*,\s*(\d+)"
     }
-
     total_pattern = r"=\s*\$(\d+\.\d{2})"
 
     extracted_address = {}
@@ -358,50 +358,17 @@ def process_fishpond(text):
     if access_token is None:
         access_token = refresh_access_token()
     if access_token:
-        # Proceed with invoice creation using the refreshed access token
         tenant_id = get_tenant_id()
-
-        #contact = Contact(ContactID=-1, Name=name, EmailAddress=email_address, Phone=phone)
-        #contact.add_address(AddressType="STREET", AddressLine1=address_line1,AddressLine2 = address_line2,AddressLine3='', City=city, PostalCode=postal_code)
-
-        # Replace this example invoice data with your actual data
-        xero_invoice = {
-            "Type": "ACCREC",
-            "Contact": {
-                "Name": Name,
-                "Addresses": [{
-                    "AddressType": "STREET",
-                    "AddressLine1": address_line1,
-                    "AddressLine2": address_line2,
-                    "City": city,
-                    "PostalCode": postal_code
-                }]
-            },
-            "Date": "2023-01-01",
-            "DueDate": "2023-01-15",
-            "LineItems": [{
-                "Description": "Example Item",
-                "Quantity": 1,
-                "UnitAmount": Total,
-                "AccountCode": "220"
-            }], 
-            "Reference": "Chrisland Sale"
-        }
+        xero_invoice = format_to_json(Name, extracted_address.get('AddressLine1'), extracted_address.get('AddressLine2'), extracted_address.get('City'), extracted_address.get('PostalCode'), Total, "Fishpond Sale")
         result = create_invoice(xero_invoice, access_token, tenant_id)
+        # erase the contents of the messages.txt file
+        open('messages.txt', 'w').close()
+        return result
+    else:
+        return "Failed to create invoice. Unable to obtain access token."
 
-    # erase the contents of the messages.txt file
-    open('messages.txt', 'w').close()
-
-
-
-    #contact = Contact(ContactID=-1, Name=Name, EmailAddress=EmailAddress, Phone=Phone)
-    #contact.add_address(AddressType="STREET", AddressLine1=extracted_address.get('AddressLine1'),AddressLine2 = extracted_address.get('AddressLine2'),AddressLine3 = extracted_address.get('AddressLine3'), City=extracted_address.get('City'), PostalCode=extracted_address.get('PostalCode'))
-    #print(contact)
-    #invoice = Invoice(contact=contact, sub_total='', total=Total, currency_code="NZD", invoice_id="123", invoice_number="INV123")
-    #print(invoice)
 
 def process_christland(text):
-    print(" ")
     name_pattern = r"Shipping Info\n\n(.+)"
     address_line1_pattern = r"Shipping Info\n\n.+\n\n(.+)"
     address_line2_pattern = r"Shipping Info\n\n.+\n\n.+\n\n(.+)"
@@ -410,7 +377,6 @@ def process_christland(text):
     phone_pattern = r"Phone: (\d+)"
     subtotal_pattern = r"Subtotal\s+NZ\$(\d+\.\d{2})"
     total_pattern = r"Total\s+NZ\$(\d+\.\d{2})"
-
     name = re.search(name_pattern, text).group(1)
     address_line1 = re.search(address_line1_pattern, text).group(1)
     address_line2 = re.search(address_line2_pattern, text).group(1)
@@ -418,10 +384,9 @@ def process_christland(text):
     city, postal_code = cityText.split(" ", 1)
     email_address = re.search(email_pattern, text).group(1)
     phone = re.search(phone_pattern, text).group(1)
-
     subtotal_match = re.search(subtotal_pattern, text)
     sub_total = subtotal_match.group(1)
-    
+   
     total_match = re.search(total_pattern, text)
     total = total_match.group(1)
 
@@ -429,42 +394,14 @@ def process_christland(text):
     if access_token is None:
         access_token = refresh_access_token()
     if access_token:
-        # Proceed with invoice creation using the refreshed access token
         tenant_id = get_tenant_id()
-
-        #contact = Contact(ContactID=-1, Name=name, EmailAddress=email_address, Phone=phone)
-        #contact.add_address(AddressType="STREET", AddressLine1=address_line1,AddressLine2 = address_line2,AddressLine3='', City=city, PostalCode=postal_code)
-
-        # Replace this example invoice data with your actual data
-        xero_invoice = {
-            "Type": "ACCREC",
-            "Contact": {
-                "Name": name,
-                "Addresses": [{
-                    "AddressType": "STREET",
-                    "AddressLine1": address_line1,
-                    "AddressLine2": address_line2,
-                    "City": city,
-                    "PostalCode": postal_code
-                }]
-            },
-            "Date": "2023-01-01",
-            "DueDate": "2023-01-15",
-            "LineItems": [{
-                "Description": "Example Item",
-                "Quantity": 1,
-                "UnitAmount": total,
-                "AccountCode": "220"
-            }], 
-            "Reference": "Chrisland Sale"
-        }
+        xero_invoice = format_to_json(name, address_line1, address_line2, city, postal_code, total, "Chrisland Sale")
         result = create_invoice(xero_invoice, access_token, tenant_id)
         # erase the contents of the messages.txt file
         open('messages.txt', 'w').close()
-    
-    #print(contact)
-    #invoice = Invoice(contact=contact, sub_total=sub_total, total=total, currency_code="NZD", invoice_id="123", invoice_number="INV123")
-    #print(invoice)
+        return result
+    else:
+        return "Failed to create invoice. Unable to obtain access token."
    
 
 def process_biblio(text):
@@ -479,12 +416,9 @@ def process_biblio(text):
     Name = lines[ship_to_index].strip()
     AddressLine1 = lines[ship_to_index + 1].strip()
     City_PostalCode = lines[ship_to_index + 2].strip()
-
     City, PostalCode = re.match(r"(.*) (\d+)", City_PostalCode).groups()
-
     sub_total_match = re.search(r"Subtotal: NZ\$(\d+\.\d+)", text)
     total_match = re.search(r"Total: NZ\$(\d+\.\d+)", text)
-
     sub_total = sub_total_match.group(1) if sub_total_match else None
     total = total_match.group(1) if total_match else None
 
@@ -499,48 +433,18 @@ def process_biblio(text):
     if access_token is None:
         access_token = refresh_access_token()
     if access_token:
-        # Proceed with invoice creation using the refreshed access token
         tenant_id = get_tenant_id()
-
-        # Replace this example invoice data with your actual data
-        xero_invoice = {
-            "Type": "ACCREC",
-            "Contact": {
-                "Name": Name,
-                "Addresses": [{
-                    "AddressType": "STREET",
-                    "AddressLine1": AddressLine1,
-                    "AddressLine2": AddressLine2,
-                    "City": City,
-                    "PostalCode": PostalCode
-                }]
-            },
-            "Date": "2023-01-01",
-            "DueDate": "2023-01-15",
-            "LineItems": [{
-                "Description": "Example Item",
-                "Quantity": 1,
-                "UnitAmount": total,
-                "AccountCode": "200"
-            }], 
-            "Reference": "Biblio Sale"
-        }
+        xero_invoice = format_to_json(Name, AddressLine1, AddressLine2, City, PostalCode, total, "Biblio Sale")
         result = create_invoice(xero_invoice, access_token, tenant_id)
         # erase the contents of the messages.txt file
         open('messages.txt', 'w').close()
 
-        print(result)
         return result
+    else:
+        return "Failed to create invoice. Unable to obtain access token."
 
-    #contact = Contact(ContactID=-1, Name=Name, EmailAddress=EmailAddress, Phone=Phone)
-    #contact.add_address(AddressType="STREET", AddressLine1=AddressLine1, AddressLine2=AddressLine2,AddressLine3='', City=City, PostalCode=PostalCode)
-    #print(contact)  
 
-    # call Xero api, send contact and get the contact_id
-    
-    #invoice = Invoice(contact=contact, sub_total=sub_total, total=total, currency_code="NZD", invoice_id="123", invoice_number="INV123")
-    #print(invoice)
-    
+   
 def finding_source(file_path):
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
@@ -563,3 +467,30 @@ def finding_source(file_path):
 def testInvoiceFromFile():
     file_path = 'messages.txt'
     result = finding_source(file_path)
+    return result
+   
+   
+def format_to_json(name1, address_line11, address_line21, city1, postal_code1, total1, sale_ref1):
+    xero_invoice = {
+            "Type": "ACCREC",
+            "Contact": {
+                "Name": name1,
+                "Addresses": [{
+                    "AddressType": "STREET",
+                    "AddressLine1": address_line11,
+                    "AddressLine2": address_line21,
+                    "City": city1,
+                    "PostalCode": postal_code1
+                }]
+            },
+            "Date": "2023-01-01",
+            "DueDate": "2023-01-15",
+            "LineItems": [{
+                "Description": "Example Item",
+                "Quantity": 1,
+                "UnitAmount": total1,
+                "AccountCode": "220"
+            }],
+            "Reference": sale_ref1
+        }
+    return xero_invoice
