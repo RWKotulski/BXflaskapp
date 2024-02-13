@@ -19,7 +19,6 @@ app = Flask(__name__)
 
 if __name__ == "__main__":
     file_path = 'messages.txt'
-    keyword = 'Biblio.co.nz'
    
 
 
@@ -28,8 +27,8 @@ CLIENT_ID = os.environ.get('CLIENT_ID')
 CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
 REDIRECT_URI = "https://bx.richardbaldwin.nz/callback"
 
+# Set up logging for debugging
 app.logger.setLevel(logging.INFO)
-
 if not os.path.exists('logs'):
     os.mkdir('logs')
 file_handler = RotatingFileHandler('logs/app.log', maxBytes=10240, backupCount=10)
@@ -87,8 +86,8 @@ def sendgrid_parser():
                     file.write(current_form_serialized + '\n\n')
 
                 # Calls function to send file name and start the Xero API process
-                # Assume finding_source is defined elsewhere
-                result = finding_source(file_path)  # Result currently doesn't do anything
+                # finding_source function is defined on line 447-ish
+                result = finding_source(file_path)  # Result currently isn't used
                
                 return "Data Added", 200
             else:
@@ -324,8 +323,13 @@ def create_invoice_route():
         return "Failed to create invoice. Unable to obtain access token."
 
 
+#================================================================================================
+    #Process the Emails
+#================================================================================================
+    
 
-# Process Emails
+
+# Process Fishpond Emails to extract the relevant data
 def process_fishpond(text):
     name_pattern = r"Send to:\s*\n\n(\w+ \w+)"
     email_pattern = r"(\w+@\w+\.\w+)"
@@ -368,6 +372,7 @@ def process_fishpond(text):
         return "Failed to create invoice. Unable to obtain access token."
 
 
+# Process Chrisland Emails to extract the relevant data
 def process_christland(text):
     name_pattern = r"Shipping Info\n\n(.+)"
     address_line1_pattern = r"Shipping Info\n\n.+\n\n(.+)"
@@ -404,6 +409,7 @@ def process_christland(text):
         return "Failed to create invoice. Unable to obtain access token."
    
 
+# Process Biblio Emails to extract the relevant data
 def process_biblio(text):
     email_match = re.search(r"\*Customer Email: \*.*<(.+?)>", text)
     phone_match = re.search(r"\*Customer Phone: \*([0-9 ]+)", text)
@@ -444,7 +450,7 @@ def process_biblio(text):
         return "Failed to create invoice. Unable to obtain access token."
 
 
-   
+# Process the file to determine the source of the email
 def finding_source(file_path):
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
@@ -455,14 +461,15 @@ def finding_source(file_path):
             elif 'Fishpond.co.nz' in content:
                 print("this is a mail from fishpond")
                 return process_fishpond(content)
-            else:
-                print("this is a mail from christland")
+            else: # This assumes that only emails from Chrisland are left and would need to be changed if more sources are added
+                print("this is a mail from chrisland")
                 return process_christland(content)
 
     except FileNotFoundError:
         return "file not found"
 
 
+# Test the invoice creation from a file
 @app.route('/testInvoiceFromFile')
 def testInvoiceFromFile():
     file_path = 'messages.txt'
@@ -470,6 +477,7 @@ def testInvoiceFromFile():
     return result
    
    
+# creates a Xero invoice object from the data
 def format_to_json(name1, address_line11, address_line21, city1, postal_code1, total1, sale_ref1):
     xero_invoice = {
             "Type": "ACCREC",
