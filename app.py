@@ -127,10 +127,11 @@ def send_email():
 
 
 #================================================================================================
+    #Xero Code
 #================================================================================================
 
 
-# Xero Code
+
 # Define the path to the file where tokens will be stored
 TOKEN_FILE_PATH = 'xero_tokens2.txt'
 RECORDS_FILE_PATH = 'records.txt'
@@ -464,7 +465,6 @@ def finding_source(file_path):
             else: # This assumes that only emails from Chrisland are left and would need to be changed if more sources are added
                 print("this is a mail from chrisland")
                 return process_christland(content)
-
     except FileNotFoundError:
         return "file not found"
 
