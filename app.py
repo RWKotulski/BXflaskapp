@@ -359,6 +359,9 @@ def process_fishpond(text):
     Phone = phone_match.group(1)
     Total = total_match.group(1)
 
+    data=['fishpond','null',Name,EmailAddress,Total]
+    save_to_csv(data)
+
     access_token = get_access_token()
     if access_token is None:
         access_token = refresh_access_token()
@@ -375,6 +378,7 @@ def process_fishpond(text):
 
 # Process Chrisland Emails to extract the relevant data
 def process_christland(text):
+    orderid_pattern = r"\*Order ID: \*(\d+)"
     name_pattern = r"Shipping Info\n\n(.+)"
     address_line1_pattern = r"Shipping Info\n\n.+\n\n(.+)"
     address_line2_pattern = r"Shipping Info\n\n.+\n\n.+\n\n(.+)"
@@ -383,6 +387,7 @@ def process_christland(text):
     phone_pattern = r"Phone: (\d+)"
     subtotal_pattern = r"Subtotal\s+NZ\$(\d+\.\d{2})"
     total_pattern = r"Total\s+NZ\$(\d+\.\d{2})"
+    order_id = re.search(orderid_pattern, text).group(1)
     name = re.search(name_pattern, text).group(1)
     address_line1 = re.search(address_line1_pattern, text).group(1)
     address_line2 = re.search(address_line2_pattern, text).group(1)
@@ -395,6 +400,9 @@ def process_christland(text):
    
     total_match = re.search(total_pattern, text)
     total = total_match.group(1)
+
+    data = ['chrisland',order_id,name,email_address,total]
+    save_to_csv(data)
 
     access_token = get_access_token()
     if access_token is None:
@@ -414,6 +422,12 @@ def process_christland(text):
 def process_biblio(text):
     email_match = re.search(r"\*Customer Email: \*.*<(.+?)>", text)
     phone_match = re.search(r"\*Customer Phone: \*([0-9 ]+)", text)
+
+    # get order_id
+    id_pattern = r"Shipment\s*#\s*([0-9]+-[0-9]+-[0-9]+)"
+    id_match = re.search(id_pattern, text)
+    order_id = id_match.group(1)
+    print("Order ID:", order_id)
 
     EmailAddress = email_match.group(1) if email_match else None
     Phone = phone_match.group(1) if phone_match else None
@@ -435,6 +449,8 @@ def process_biblio(text):
         if AddressLine2 == City+" "+PostalCode :
             AddressLine2 = ""
 
+    data = ['biblio',order_id,Name,EmailAddress,str(total)]
+    save_to_csv(data)
 
     access_token = get_access_token()
     if access_token is None:
@@ -502,3 +518,48 @@ def format_to_json(name1, address_line11, address_line21, city1, postal_code1, t
             "Reference": sale_ref1
         }
     return xero_invoice
+
+
+#================================================================================================
+    #Save to CSV & Check Duplicate
+#================================================================================================
+
+
+def check_duplicate(filename,data):
+    if not os.path.exists(filename):
+        return False
+    
+    with open(filename, 'r', newline='') as csvfile:
+        reader = csv.reader(csvfile)
+        headers = next(reader, None)
+        if headers is None:
+            return False
+        
+        order_id_index = headers.index('order_id')
+        email_index = headers.index('customer_email')
+        total_index = headers.index('total')
+
+        for row in reader:
+            if data[0].lower() == 'fishpond':
+                 if row[email_index] == data[3] and row[total_index] == data[4]:
+                     print('fishpond record exists')
+                     return True
+            else:
+                if row[order_id_index] == data[1]:
+                    print("order_id exists")
+                    return True
+    return False
+
+
+def save_to_csv(data):
+    print(data)
+    filename = 'info.csv'
+    headers = ['platform', 'order_id', 'customer_name', 'customer_email', 'total']
+    file_exists = os.path.exists(filename)
+    order_id_exists = check_duplicate(filename, data)
+    if not order_id_exists:
+        with open(filename, 'a', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            if not file_exists:
+                writer.writerow(headers)
+            writer.writerow(data)
