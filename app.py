@@ -96,14 +96,6 @@ def sendgrid_parser():
             # Handle exceptions
             return f"An error occurred: {e}", 500
 
-# Add data to a CSV file
-def collect_data():
-    data = request.form.to_dict()
-    with open('daily_data.csv', 'a', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=data.keys())
-        writer.writerow(data)
-    return 'Data received'
-
 
 # Working Test Email Code
 # @app.route('/send_test_email')
